@@ -1,0 +1,96 @@
+import numpy as np
+import pickle
+
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.preprocessing.image import load_img
+from tensorflow.keras.preprocessing.image import img_to_array
+from tensorflow.keras.applications.inception_v3 import preprocess_input
+from tensorflow.keras.applications.inception_v3 import InceptionV3
+from tensorflow.keras.models import Model
+
+base_model = InceptionV3(weights="imagenet")
+
+feature_model = Model(
+    base_model.input,
+    base_model.layers[-2].output
+)
+
+tokenizer = pickle.load(
+    open("models/tokenizer.pkl", "rb")
+)
+
+caption_model = load_model(
+    "models/caption_model.h5"
+)
+
+max_length = 34
+
+
+def word_for_id(integer):
+    for word, index in tokenizer.word_index.items():
+        if index == integer:
+            return word
+    return None
+
+
+def extract_features(filename):
+
+    image = load_img(filename, target_size=(299,299))
+
+    image = img_to_array(image)
+
+    image = np.expand_dims(image, axis=0)
+
+    image = preprocess_input(image)
+
+    feature = feature_model.predict(image)
+
+    return feature
+
+
+def generate_desc(photo):
+
+    in_text = "startseq"
+
+    for i in range(max_length):
+
+        sequence = tokenizer.texts_to_sequences([in_text])[0]
+
+        sequence = pad_sequences(
+            [sequence],
+            maxlen=max_length
+        )
+
+        yhat = caption_model.predict(
+            [photo, sequence],
+            verbose=0
+        )
+
+        yhat = np.argmax(yhat)
+
+        word = word_for_id(yhat)
+
+        if word is None:
+            break
+
+        in_text += " " + word
+
+        if word == "endseq":
+            break
+
+    final = in_text.replace("startseq", "")
+    final = final.replace("endseq", "")
+
+    return final.strip()
+
+
+image = "sample.jpg"
+
+photo = extract_features(image)
+
+caption = generate_desc(photo)
+
+print("Generated Caption:")
+
+print(caption)
